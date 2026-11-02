@@ -7,6 +7,7 @@ import random
 from pathlib import Path
 
 from harness import evaluation, report
+from harness.calibration import calibration_table
 from harness.config import HarnessConfig
 from harness.fusion import ScoreFusion
 from harness.methods import build, build_all
@@ -67,6 +68,13 @@ def run_experiment(
         "shuffled_label_control_auc": evaluation.shuffled_control(df_eval, "fused", rng),
         "learned_weights": fuser.weights(),
         "nan_counts_fit": fuser.nan_counts_,
+        "calibration": {
+            "fused": calibration_table(neg_eval, pos_eval),
+            "cosine_delta": calibration_table(
+                df_eval.loc[df_eval.label == 0, "cosine_delta"].dropna().to_numpy(),
+                df_eval.loc[df_eval.label == 1, "cosine_delta"].dropna().to_numpy(),
+            ),
+        },
     }
 
     out = Path(out_dir)
@@ -75,6 +83,7 @@ def run_experiment(
     report.fig_distribution_grid(df_eval, method_cols + ["fused"], out / "distributions.png")
     report.fig_roc_curves(df_eval, method_cols + ["fused"], out / "roc.png")
     report.fig_weights(fuser.weights(), out / "weights.png")
+    report.fig_calibration(df_eval, "fused", fpr_target, out / "calibration.png")
 
     if example_pair is not None:
         row = df_eval.loc[df_eval["pair_id"] == example_pair.pair_id]
@@ -114,6 +123,11 @@ def print_summary(payload: dict) -> None:
     print(f"{'[fused]':<18} {f['auc_fit']:>8.3f} {f['auc_eval']:>9.3f}")
     print(f"tau @ FPR {payload['fpr_target']:.0%}: {f['tau']:.3f}   TPR at tau: {f['tpr_at_tau']:.3f}")
     print(f"shuffled-label control AUC: {payload['shuffled_label_control_auc']:.3f} (must be ~0.5)")
+    print("calibration (fused):")
+    for row in payload["calibration"]["fused"]:
+        print(
+            f"  FPR {row['fpr']:.0%}: tau={row['tau']:.3f}  TPR@tau={row['tpr_at_tau']:.3f}"
+        )
     print("learned weights:", {k: round(v, 3) for k, v in payload["learned_weights"].items()})
     print(
         "fused AUC by length bucket:",

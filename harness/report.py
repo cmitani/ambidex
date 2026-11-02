@@ -77,6 +77,27 @@ def fig_weights(weights: dict[str, float], path: Path) -> None:
     plt.close(fig)
 
 
+def fig_calibration(df: pd.DataFrame, column: str, fpr_target: float, path: Path) -> None:
+    """Score distributions of one column with the tau line at the FPR budget."""
+    import numpy as np
+
+    pos = df.loc[df.label == 1, column].dropna()
+    neg = df.loc[df.label == 0, column].dropna()
+    if len(neg) < 5:
+        return
+    tau = float(np.quantile(neg.to_numpy(), 1.0 - fpr_target))
+    fig, ax = plt.subplots(figsize=(7, 4))
+    ax.hist(neg, bins=30, alpha=0.6, label="different author", color=NEG_COLOR)
+    ax.hist(pos, bins=30, alpha=0.6, label="same author", color=POS_COLOR)
+    ax.axvline(tau, color="k", linestyle="--", linewidth=1.2)
+    ax.text(tau, ax.get_ylim()[1] * 0.9, f" tau@FPR {fpr_target:.0%}={tau:.2f}", fontsize=8)
+    ax.set_title(f"{column}: calibration")
+    ax.legend(fontsize=8)
+    fig.tight_layout()
+    fig.savefig(path, dpi=130)
+    plt.close(fig)
+
+
 def write_explain_report(
     path: Path,
     pair_id: str,
