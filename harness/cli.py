@@ -343,7 +343,7 @@ def main(argv=None) -> int:
     p_bench.add_argument("--n", type=int, default=20, help="number of items to mask")
     p_bench.add_argument("--maskers", default="identity,thesaurus", help="comma-separated masker list")
     p_bench.add_argument("--ollama-url", default="http://localhost:11434")
-    p_bench.add_argument("--ollama-model", default="qwen2.5:7b")
+    p_bench.add_argument("--ollama-model", default="qwen2.5:3b")
     p_bench.set_defaults(func=cmd_bench)
 
     args = parser.parse_args(argv)

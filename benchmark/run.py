@@ -36,7 +36,7 @@ def run_benchmark(
     config: HarnessConfig,
     out_dir: str | Path,
     ollama_url: str = "http://localhost:11434",
-    ollama_model: str = "qwen2.5:7b",
+    ollama_model: str = "qwen2.5:3b",
     progress: bool = True,
 ) -> dict:
     """items: (author_id, known docs, unknown doc). Writes report.json + benchmark.md."""
