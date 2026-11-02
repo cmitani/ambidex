@@ -249,6 +249,52 @@ def cmd_attack(args) -> int:
     return 0
 
 
+def cmd_bench(args) -> int:
+    from benchmark.run import run_benchmark
+
+    config = HarnessConfig()
+    rng = random.Random(config.seed)
+    if args.synthetic:
+        corpus = synthetic_corpus(n_authors=12, docs_per_author=6, words_per_doc=110, seed=config.seed)
+        by_author = corpus.by_author()
+        items = [
+            (a, docs[:-1], docs[-1]) for a, docs in sorted(by_author.items())
+        ][: args.n]
+    elif args.pan15:
+        problems = load_pan15_problems(args.pan15, args.lang)
+        # style-removal metrics need true same-author items: filter to label Y
+        problems = [p for p in problems if p[3] == 1]
+        problems = rng.sample(problems, min(args.n, len(problems)))
+        items = [(pid, known, unknown) for pid, known, unknown, _ in problems]
+    elif args.jsonl:
+        corpus = pool_corpus(
+            _load_jsonl(args.jsonl, args.lang).filter_lang(args.lang), config, rng
+        )
+        by_author = corpus.by_author()
+        items = [
+            (a, docs[:-1], docs[-1])
+            for a, docs in sorted(by_author.items())
+            if len(docs) >= 2
+        ][: args.n]
+    else:
+        print("specify --synthetic, --pan15 or --jsonl", file=sys.stderr)
+        return 2
+
+    maskers = [m.strip() for m in args.maskers.split(",") if m.strip()]
+    print(f"benchmark: {len(items)} items, maskers: {maskers}")
+    payload = run_benchmark(
+        items=items,
+        masker_names=maskers,
+        config=config,
+        out_dir=Path(args.out) / f"bench-{args.name}",
+        ollama_url=args.ollama_url,
+        ollama_model=args.ollama_model,
+    )
+    for row in payload["rows"]:
+        print(row)
+    return 0
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="ambidex")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -286,6 +332,19 @@ def main(argv=None) -> int:
     p_attack.add_argument("--k", type=int, default=4, help="cross-user: virtual operators")
     p_attack.add_argument("--m", type=int, default=3, help="cross-user: personas per operator")
     p_attack.set_defaults(func=cmd_attack)
+
+    p_bench = sub.add_parser("bench", help="run baseline maskers through the attack battery")
+    p_bench.add_argument("--synthetic", action="store_true", help="use a synthetic corpus")
+    p_bench.add_argument("--pan15", help="extracted PAN15 corpus dir")
+    p_bench.add_argument("--jsonl", help="generic corpus: jsonl rows {text, author, lang?}")
+    p_bench.add_argument("--lang", default="en")
+    p_bench.add_argument("--name", default="run")
+    p_bench.add_argument("--out", default="reports")
+    p_bench.add_argument("--n", type=int, default=20, help="number of items to mask")
+    p_bench.add_argument("--maskers", default="identity,thesaurus", help="comma-separated masker list")
+    p_bench.add_argument("--ollama-url", default="http://localhost:11434")
+    p_bench.add_argument("--ollama-model", default="qwen2.5:7b")
+    p_bench.set_defaults(func=cmd_bench)
 
     args = parser.parse_args(argv)
     return args.func(args)

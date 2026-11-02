@@ -30,6 +30,18 @@ python -m venv .venv
 # реальные данные: PAN 2015 author verification (Zenodo) и полный прогон:
 python eval/fetchers/fetch_pan15.py --langs en
 .venv/Scripts/python -m harness.cli verify --pan15 data/raw/pan15/english --lang en --name pan15-en
+
+# атаки (кластеризация, кросс-юзер, L1-утечка) на синтетике или своём корпусе:
+.venv/Scripts/python -m harness.cli attack --synthetic --name demo
+.venv/Scripts/python -m harness.cli attack --pan15 data/raw/pan15/english --lang en --name pan15
+
+# абляция контента (сколько сигнала — тема, а не стиль):
+.venv/Scripts/python -m harness.cli verify --pan15 data/raw/pan15/english --lang en \
+    --name pan15-en-fw --ablate function-words
+
+# бенчмарк бейзлайн-маскировщиков (identity, thesaurus; ollama — при поднятом сервере):
+.venv/Scripts/python -m harness.cli bench --pan15 data/raw/pan15/english --lang en --n 15 --name pan15-en
+.venv/Scripts/python -m harness.cli bench --synthetic --maskers identity,thesaurus,ollama --n 10 --name synth
 ```
 
 Отчёты (JSON + графики + разбор одного решения) пишутся в `reports/<name>/`.
@@ -63,7 +75,24 @@ z-нормализации (её делает слой фузии).
 - **Всё per-language.** Верификация сравнивает тексты внутри одного языка. Кросс-языковой линкинг —
   отдельная будущая атака, не часть ядра.
 - **Детекция ИИ-текста — отдельная ось.** Она отвечает на вопрос «человек или машина», а не «кто»,
-  и никогда не подмешивается в авторский скор.
+  и никогда не подмешивается в авторский скор. Есть три детектора: noop, статистическая эвристика
+  (без зависимостей) и обёртка над HF-моделью — последняя ставится опцией:
+  `pip install -e ".[detectors]"`.
+
+## Бенчмарк маскировщиков
+
+`benchmark/` — плагин-интерфейс «текст → текст» и бейзлайны:
+
+| маскировщик | что делает |
+|---|---|
+| `identity` | ничего — нижняя граница (обязан показывать худшее снятие стиля) |
+| `thesaurus` | случайные синонимические замены (только лексика) |
+| `ollama` | один generic-промпт парафраза на локальном сервере (без стилевых целей) |
+
+Метрики на выходе: `style_removal_auc` (1.0 = стиль нетронут, 0.5 = стиль уничтожен),
+`lexical_preservation` (TF-IDF прокси сохранности смысла), `output_cohesion_delta`
+(>0 = выходы начали выглядеть одной семьёй — плохо). Добавить маскировщик = один класс-плагин
+в `benchmark/maskers.py`.
 
 ## Данные
 
