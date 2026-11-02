@@ -13,6 +13,7 @@ import random
 import sys
 from pathlib import Path
 
+from harness.attacks.ablation import ablate_corpus
 from harness.config import (
     CharNgramConfig,
     DeltaConfig,
@@ -21,6 +22,7 @@ from harness.config import (
     UnmaskingConfig,
 )
 from harness.data import Corpus, Document, synthetic_corpus
+from harness.features import FUNCTION_WORDS
 from harness.pairs import build_pairs, pool_corpus
 from harness.pan15 import load_pan15_problems, pan15_to_pairs
 from harness.pipeline import print_summary, run_experiment
@@ -98,6 +100,7 @@ def cmd_verify(args) -> int:
         if not problems:
             print(f"no problems found under {args.pan15}", file=sys.stderr)
             return 2
+        problems = _ablate_problems(problems, args.ablate)
         labels = [p[3] for p in problems]
         print(f"PAN corpus: {len(problems)} problems ({sum(labels)} same / {len(labels) - sum(labels)} diff)")
         fit_pairs, eval_pairs, all_known = pan15_to_pairs(problems, args.eval_frac, rng)
@@ -110,6 +113,9 @@ def cmd_verify(args) -> int:
         example = next((p for p in eval_pairs if p.label == 1), None)
     elif args.jsonl:
         corpus = _load_jsonl(args.jsonl, args.lang).filter_lang(args.lang)
+        if args.ablate != "none":
+            corpus = ablate_corpus(corpus, args.ablate)
+            print(f"ablation '{args.ablate}': {corpus.stats()}")
         pooled = pool_corpus(corpus, config, rng)
         fit_pairs, eval_pairs = build_pairs(pooled, config, rng)
         by_author = pooled.by_author()
@@ -141,6 +147,108 @@ def cmd_verify(args) -> int:
     return 0
 
 
+def _ablate_problems(problems, mode: str):
+    if mode == "none":
+        return problems
+    out = []
+    for pid, known, unknown, label in problems:
+        ablated = ablate_corpus(Corpus(known + [unknown]), mode).docs
+        known_abl = [d for d in ablated if not d.doc_id.endswith("/unknown")]
+        unknown_abl = [d for d in ablated if d.doc_id.endswith("/unknown")]
+        if known_abl and unknown_abl:
+            out.append((pid, known_abl, unknown_abl[0], label))
+    print(f"ablation '{mode}': {len(out)}/{len(problems)} problems survived")
+    return out
+
+
+def cmd_attack(args) -> int:
+    from harness.attacks.clustering import clustering_attack
+    from harness.attacks.cross_user import cross_user_attack
+    from harness.attacks.l1_identification import L1LeakScorer
+
+    config = HarnessConfig()
+    rng = random.Random(config.seed)
+    args.attacks = [a.strip() for a in args.attacks.split(",") if a.strip()]
+    if args.synthetic:
+        corpus = synthetic_corpus(n_authors=12, docs_per_author=6, words_per_doc=110, seed=config.seed)
+    elif args.pan15:
+        problems = load_pan15_problems(args.pan15, args.lang)
+        docs = [d for _, known, _, _ in problems for d in known]
+        corpus = Corpus(docs)
+    elif args.jsonl:
+        corpus = _load_jsonl(args.jsonl, args.lang).filter_lang(args.lang)
+    else:
+        print("specify --synthetic, --pan15 or --jsonl", file=sys.stderr)
+        return 2
+    print(f"corpus: {corpus.stats()}")
+    results: dict = {"corpus": corpus.stats()}
+
+    by_author = corpus.by_author()
+    prolific = sorted(by_author, key=lambda a: -len(by_author[a]))
+
+    if "clustering" in args.attacks:
+        if len(prolific) < 5:
+            results["clustering"] = "skipped: need >= 5 authors"
+        else:
+            target_authors = prolific[:3]
+            targets = [d for a in target_authors for d in by_author[a]][:18]
+            rest = [d for a in prolific[3:] for d in by_author[a]]
+            background = rng.sample(rest, min(len(rest), 120))
+            results["clustering"] = clustering_attack(
+                targets, background, config.delta.n_mfw, rng
+            )
+
+    if "cross-user" in args.attacks:
+        try:
+            results["cross_user"] = cross_user_attack(
+                corpus, config.delta.n_mfw, rng, k_operators=args.k, m_personas=args.m
+            )
+        except ValueError as e:
+            results["cross_user"] = f"skipped: {e}"
+
+    if "l1" in args.attacks:
+        lang_texts: dict[str, list[str]] = {}
+        for lang in {d.lang for d in corpus.docs}:
+            texts = [d.text for d in corpus.filter_lang(lang).docs]
+            if len(texts) >= 10:
+                lang_texts[lang] = texts
+        if args.synthetic:
+            lang_texts.setdefault(
+                "ru",
+                [
+                    " ".join(rng.choices(list(FUNCTION_WORDS["ru"]), k=70)) + "."
+                    for _ in range(40)
+                ],
+            )
+        if len(lang_texts) < 2:
+            results["l1"] = "skipped: need >= 2 languages with >= 10 docs each"
+        else:
+            scorer = L1LeakScorer().fit(lang_texts)
+            sample_lang = max(lang_texts, key=lambda l: len(lang_texts[l]))
+            clean = scorer.accent(rng.choice(lang_texts[sample_lang]), own_lang=sample_lang)
+            foreign = next(l for l in lang_texts if l != sample_lang)
+            foreign_vocab = " ".join(lang_texts[foreign]).split()[:2000]
+            mixed_text = (
+                " ".join(rng.choice(lang_texts[sample_lang]).split()[:40])
+                + " "
+                + " ".join(rng.choices(foreign_vocab, k=40))
+            )
+            accented = scorer.accent(mixed_text, own_lang=sample_lang)
+            results["l1"] = {
+                "clean_text": clean,
+                "accented_text": accented,
+                "leak_prob_delta": accented["leak_prob"] - clean["leak_prob"],
+            }
+
+    out = Path(args.out) / f"attacks-{args.name}"
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "report.json").write_text(
+        json.dumps(results, ensure_ascii=False, indent=2, default=float), encoding="utf-8"
+    )
+    print(json.dumps(results, ensure_ascii=False, indent=2, default=float))
+    return 0
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="ambidex")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -157,7 +265,27 @@ def main(argv=None) -> int:
     p_verify.add_argument("--out", default="reports")
     p_verify.add_argument("--eval-frac", type=float, default=0.3)
     p_verify.add_argument("--methods", default=None, help="comma-separated subset of methods")
+    p_verify.add_argument(
+        "--ablate",
+        default="none",
+        choices=["none", "function-words", "content-words"],
+        help="content ablation applied to the corpus before pairing",
+    )
     p_verify.set_defaults(func=cmd_verify)
+
+    p_attack = sub.add_parser("attack", help="run standalone attacks on a corpus")
+    p_attack.add_argument("--synthetic", action="store_true", help="use a synthetic corpus")
+    p_attack.add_argument("--pan15", help="extracted PAN15 corpus dir")
+    p_attack.add_argument("--jsonl", help="generic corpus: jsonl rows {text, author, lang?}")
+    p_attack.add_argument("--lang", default="en")
+    p_attack.add_argument("--name", default="run")
+    p_attack.add_argument("--out", default="reports")
+    p_attack.add_argument(
+        "--attacks", default="clustering,cross-user,l1", help="comma-separated attack list"
+    )
+    p_attack.add_argument("--k", type=int, default=4, help="cross-user: virtual operators")
+    p_attack.add_argument("--m", type=int, default=3, help="cross-user: personas per operator")
+    p_attack.set_defaults(func=cmd_attack)
 
     args = parser.parse_args(argv)
     return args.func(args)
