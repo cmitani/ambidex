@@ -1,0 +1,75 @@
+# DVC pipeline: data fetch -> verify/bench runs.
+# Install dvc once:  pip install dvc
+# Reproduce:        dvc repro fetch-en / dvc repro verify-en / dvc repro (all)
+# Data and reports stay OUTSIDE git; dvc tracks hashes in dvc.lock (committed).
+stages:
+  fetch-en:
+    cmd: python eval/fetchers/fetch_pan15.py --langs en
+    deps:
+      - eval/fetchers/fetch_pan15.py
+    outs:
+      - data/raw/pan15/english
+
+  fetch-es:
+    cmd: python eval/fetchers/fetch_pan15.py --langs es
+    deps:
+      - eval/fetchers/fetch_pan15.py
+    outs:
+      - data/raw/pan15/spanish
+
+  fetch-nl:
+    cmd: python eval/fetchers/fetch_pan15.py --langs nl
+    deps:
+      - eval/fetchers/fetch_pan15.py
+    outs:
+      - data/raw/pan15/dutch
+
+  fetch-gr:
+    cmd: python eval/fetchers/fetch_pan15.py --langs gr
+    deps:
+      - eval/fetchers/fetch_pan15.py
+    outs:
+      - data/raw/pan15/greek
+
+  verify-en:
+    cmd: python -m harness.cli verify --pan15 data/raw/pan15/english --lang en --name pan15-en
+    deps:
+      - harness
+      - data/raw/pan15/english
+    outs:
+      - reports/pan15-en
+
+  verify-es:
+    cmd: python -m harness.cli verify --pan15 data/raw/pan15/spanish --lang es --name pan15-es
+    deps:
+      - harness
+      - data/raw/pan15/spanish
+    outs:
+      - reports/pan15-es
+
+  verify-nl:
+    cmd: python -m harness.cli verify --pan15 data/raw/pan15/dutch --lang nl --name pan15-nl
+    deps:
+      - harness
+      - data/raw/pan15/dutch
+    outs:
+      - reports/pan15-nl
+
+  verify-gr:
+    cmd: python -m harness.cli verify --pan15 data/raw/pan15/greek --lang gr --name pan15-gr
+    deps:
+      - harness
+      - data/raw/pan15/greek
+    outs:
+      - reports/pan15-gr
+
+  bench-en:
+    # ollama-based masking needs a running server; pipeline stage uses local-only maskers
+    cmd: python -m harness.cli bench --pan15 data/raw/pan15/english --lang en --n 15
+      --maskers identity,thesaurus --name pan15-en-bench
+    deps:
+      - harness
+      - benchmark
+      - data/raw/pan15/english
+    outs:
+      - reports/pan15-en-bench
