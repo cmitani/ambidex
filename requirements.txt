@@ -1,0 +1,14 @@
+# Ambidex — Python dependencies (mirrors pyproject.toml)
+# install: pip install -r requirements.txt
+numpy>=1.26
+pandas>=2.1
+scikit-learn>=1.4
+scipy>=1.11
+matplotlib>=3.8
+
+# dev / tests
+pytest>=8.0
+ruff>=0.6
+
+# optional: real HF AI-text detectors (TransformersAIDetector)
+# pip install transformers>=4.40 torch>=2.2
