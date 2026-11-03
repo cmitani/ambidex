@@ -2,6 +2,7 @@
 data/
 reports/
 PLAN.md
+CONTEXT.md
 .env
 *.log
 
