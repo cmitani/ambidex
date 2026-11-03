@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """Fetch PAN 2015 author verification corpora from Zenodo (record 3737563).
 
 Data stays outside git (data/ is gitignored). Result:
