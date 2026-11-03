@@ -1,5 +1,7 @@
 # Ambidex
 
+[![ci](https://github.com/cmitani/ambidex/actions/workflows/ci.yml/badge.svg)](https://github.com/cmitani/ambidex/actions/workflows/ci.yml)
+
 **Измерительный харнесс для authorship verification** — набор инструментов, отвечающих на один вопрос
 строго и воспроизводимо: *дан корпус текстов известного автора и неизвестный текст — может ли
 противник доказать, что их написал один человек?*
@@ -15,7 +17,24 @@ char n-граммы, пунктуационные профили), калибр�
 
 ## Статус
 
-Фаза 1 (харнесс v0) + калибровка порогов. Методология — `docs/methodology.md`.
+Фазы 1–3 завершены: верификация (7 методов + обучаемая фузия), калибровка τ, атаки
+(кластеризация, кросс-юзер, L1-утечка, абляция контента), бенчмарк маскировщиков.
+Проверено на PAN15 в четырёх языках — цифры и сравнение с полем того года: `docs/results.md`.
+Методология — `docs/methodology.md`.
+
+## Инфраструктура
+
+- **CI** (`.github/workflows/ci.yml`): линтер + тесты + smoke на синтетике — реальные корпуса
+  в CI не скачиваются и не печатаются.
+- **Docker**: `docker build -t ambidex . && docker run --rm ambidex` (внутри — smoke на синтетике).
+  Корпуса подключаются volume: `docker run --rm -v ./data:/app/data -v ./reports:/app/reports ambidex
+  python -m harness.cli verify --pan15 data/raw/pan15/english --lang en --name pan15-en`.
+- **Compose** (`docker-compose.yaml`): стек харнесс + Ollama одной командой. Модель качается раз:
+  `docker compose exec ollama ollama pull qwen2.5:3b`; внутри compose-сети сервер —
+  `http://ollama:11434` (флаг `--ollama-url`).
+- **DVC** (`dvc.yaml`): пайплайн «скачивание корпусов → прогоны». `pip install dvc`, затем
+  `dvc repro fetch-en` / `dvc repro verify-en`. Данные и отчёты в git не попадают — dvc хранит
+  хеши в `dvc.lock`.
 
 ## Быстрый старт
 
