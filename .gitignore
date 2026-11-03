@@ -1,15 +1,15 @@
-# data & artifacts never enter git
+
 data/
 reports/
 PLAN.md
 .env
 *.log
 
-# tooling artifacts
+
 .zcodeignore
 .mimosa/
 
-# python
+
 __pycache__/
 *.py[cod]
 .venv/
@@ -21,7 +21,7 @@ build/
 .mypy_cache/
 .coverage
 
-# os / editor
+
 .DS_Store
 Thumbs.db
 .idea/
