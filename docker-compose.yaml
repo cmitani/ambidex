@@ -1,0 +1,27 @@
+services:
+  ollama:
+    image: ollama/ollama
+    volumes:
+      - ollama_models:/root/.ollama
+    # expose to host only if you want to call it from outside compose:
+    # ports:
+    #   - "11434:11434"
+
+  harness:
+    build: .
+    volumes:
+      - ./data:/app/data
+      - ./reports:/app/reports
+    depends_on:
+      - ollama
+    # default CMD runs `harness.cli smoke`; override per run, e.g.:
+    # docker compose run --rm harness python -m harness.cli verify \
+    #   --pan15 data/raw/pan15/english --lang en --name pan15-en
+    # inside the compose network the local model server is http://ollama:11434:
+    # docker compose run --rm harness python -m harness.cli bench \
+    #   --pan15 data/raw/pan15/english --lang en --n 10 \
+    #   --maskers identity,ollama --ollama-url http://ollama:11434 --name bench
+    # model pull (once): docker compose exec ollama ollama pull qwen2.5:3b
+
+volumes:
+  ollama_models:

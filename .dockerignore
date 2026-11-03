@@ -1,0 +1,15 @@
+.git
+.venv
+data/
+reports/
+PLAN.md
+.mimosa/
+.zcodeignore
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+__pycache__/
+*.pyc
+*.py[cod]
+*.egg-info/
+.github/
